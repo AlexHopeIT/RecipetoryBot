@@ -1,5 +1,6 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
+from keyboards.inline import main_menu_keyboard
 
 
 common_router = Router()
@@ -19,8 +20,10 @@ async def cmd_help(message: types.Message):
 
 @common_router.message(CommandStart)
 async def cmd_start(message: types.Message):
+    keyboard = main_menu_keyboard()
     await message.answer(
         f'Привет, {message.from_user.first_name}!👋\n'
         'Я - Рецепторий, твой персональный кулинарный помощник! 🧑‍🍳\n'
-        'Пиши /help, чтобы узнать, что я умею '
+        'Пиши /help, чтобы узнать, что я умею ',
+        reply_markup=keyboard
     )
