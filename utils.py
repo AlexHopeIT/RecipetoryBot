@@ -3,7 +3,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import func, select, or_
 from db import SessionLocal, Recipe
-from handlers.states import FindRecipeState
+from handlers.states import FindRecipeState, ByIngredientsState
 from keyboards.inline import main_menu_keyboard
 
 
@@ -15,7 +15,7 @@ async def send_one_recipe(
     keyboard = main_menu_keyboard()
 
     caption_text = (
-            f'<b>Случайный рецепт:</b> {recipe.name_ru}'
+            f'<b>Рецепт:</b> {recipe.name_ru}'
         )
     full_recipe_text = (
         '<b>Ингредиенты:</b>'
@@ -102,7 +102,7 @@ async def process_search_query_and_display_results(
 async def send_selected_recipe_by_choice(
         message: types.Message, state: FSMContext
         ):
-    '''Принимает выбор блюда юзера и отправляет рецепт'''
+    '''Принимает выбор блюда юзера из списка и отправляет рецепт'''
     user_data = await state.get_data()
     found_recipes = user_data.get('found_recipes')
 
@@ -124,3 +124,52 @@ async def send_selected_recipe_by_choice(
             await message.answer('Введите корректный номер рецепта из списка.')
     except ValueError:
         await message.answer('Введите число!')
+
+
+async def start_by_ingredients_search(
+        event: types.Message | types.CallbackQuery,
+        state: FSMContext
+        ):
+    '''Запуск диалога поиска по ингредиентам'''
+    await event.answer(
+        'Введите ингредиенты, которые у вас есть, через запятую'
+    )
+    await state.set_state(ByIngredientsState.waiting_for_ingredients)
+
+
+async def process_search_by_ingredients(
+        message: types.Message, state: FSMContext
+        ):
+    keyboard = main_menu_keyboard()
+    async with SessionLocal() as db:
+        ingredients = message.text
+        ingredients_list = [item.strip() for item in ingredients.split(',')]
+
+        search_conditions = []
+        for ingredient in ingredients_list:
+            search_conditions.append(
+                Recipe.ingredients_ru.ilike(f'%{ingredient}%')
+                )
+        result = await db.execute(
+            select(Recipe).where(or_(*search_conditions))
+            )
+
+        found_recipes = result.scalars().all()
+        if found_recipes:
+            answ = ['Найдены следующие рецепты:']
+            for i, recipe in enumerate(found_recipes, start=1):
+                answ.append(f'{i}. {recipe.name_ru}')
+
+            final_message = '\n'.join(answ)
+
+            await message.answer(final_message)
+            await message.answer(
+                'Напишите номер блюда, рецепт которого хотите получить🍽'
+                )
+
+            await state.update_data(found_recipes=found_recipes)
+            await state.set_state(ByIngredientsState.waiting_for_choice)
+        else:
+            await message.answer('Рецептов не найдено 🤷‍♂️',
+                                 reply_markup=keyboard)
+            await state.clear()

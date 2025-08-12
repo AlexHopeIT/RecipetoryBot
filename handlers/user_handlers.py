@@ -4,10 +4,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 from sqlalchemy import func, select, or_
 from db import SessionLocal, Recipe
-from .states import FindRecipeState
+from .states import FindRecipeState, ByIngredientsState
 from utils import (send_random_recipe, start_search_dialog,
                    process_search_query_and_display_results,
-                   send_selected_recipe_by_choice)
+                   send_selected_recipe_by_choice,
+                   start_by_ingredients_search,
+                   process_search_by_ingredients)
 
 
 user_handlers_router = Router()
@@ -50,5 +52,34 @@ async def process_recipe_name(message: types.Message, state: FSMContext):
 
 @user_handlers_router.message(FindRecipeState.waiting_for_choice)
 async def process_recipe_choice(message: types.Message, state: FSMContext):
+    '''Второй шаг поиска. Обработка выбора юзера'''
+    await send_selected_recipe_by_choice(message, state)
+
+
+@user_handlers_router.message(Command('by_ingredients'))
+async def find_recipe_by_ingredients(message: types.Message, state: FSMContext):
+    '''Ручка поиска по ингредиентам'''
+    await start_by_ingredients_search(message, state)
+
+
+@user_handlers_router.callback_query(
+        lambda c: c.data == 'by_ingredients_inline'
+        )
+async def find_recipe_by_ingredients_inline(
+    callback: types.CallbackQuery,
+    state: FSMContext
+):
+    await callback.answer()
+    await start_by_ingredients_search(callback.message, state)
+
+
+@user_handlers_router.message(ByIngredientsState.waiting_for_ingredients)
+async def process_recipe_ingredients(message: types.Message, state: FSMContext):
+    '''Первый шаг поиска. Подготовка списка найденных рецептов'''
+    await process_search_by_ingredients(message, state)
+
+
+@user_handlers_router.message(ByIngredientsState.waiting_for_choice)
+async def process_choice(message: types.Message, state: FSMContext):
     '''Второй шаг поиска. Обработка выбора юзера'''
     await send_selected_recipe_by_choice(message, state)
