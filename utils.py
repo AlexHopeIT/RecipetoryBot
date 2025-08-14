@@ -2,17 +2,18 @@ from aiogram import types
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import func, select, or_
-from db import SessionLocal, Recipe
+from sqlalchemy.orm import selectinload
+from db import SessionLocal, Recipe, User
 from handlers.states import FindRecipeState, ByIngredientsState
-from keyboards.inline import main_menu_keyboard
+from keyboards.inline import main_menu_keyboard, recipe_actions_keyboard
 
 
 async def send_one_recipe(
         event: types.Message | types.CallbackQuery,
-        recipe: Recipe
+        recipe: Recipe, state: FSMContext
         ):
     '''Отправляет один рецепт пользователю, включая фото и полный текст'''
-    keyboard = main_menu_keyboard()
+    keyboard = recipe_actions_keyboard()
 
     caption_text = (
             f'<b>Рецепт:</b> {recipe.name_ru}'
@@ -140,7 +141,7 @@ async def start_by_ingredients_search(
 async def process_search_by_ingredients(
         message: types.Message, state: FSMContext
         ):
-    keyboard = main_menu_keyboard()
+    keyboard = main_menu_keyboard(state)
     async with SessionLocal() as db:
         ingredients = message.text
         ingredients_list = [item.strip() for item in ingredients.split(',')]
@@ -173,3 +174,33 @@ async def process_search_by_ingredients(
             await message.answer('Рецептов не найдено 🤷‍♂️',
                                  reply_markup=keyboard)
             await state.clear()
+
+
+async def from_favorites(callback: types.CallbackQuery, state: FSMContext):
+    '''Получает и выводит юзеру список избранных рецептов'''
+    keyboard = await main_menu_keyboard(state)
+    async with SessionLocal() as db:
+        user_id = callback.from_user.id
+        result = await db.execute(
+            select(User).options(
+                selectinload(User.favorites_recipes)
+                ).where(User.id == user_id)
+            )
+        user = result.scalars().first()
+
+        if user and user.favorites_recipes:
+            answ = ['⭐️ Ваши избранные рецепты:']
+            for i, recipe in enumerate(user.favorites_recipes, start=1):
+                answ.append(f'{i}. {recipe.name_ru}')
+
+            final_message = '\n'.join(answ)
+
+            await callback.message.answer(
+                final_message,
+                reply_markup=keyboard
+            )
+        else:
+            await callback.message.answer(
+                'У вас пока нет избранных рецептов 🤷‍♂️',
+                reply_markup=keyboard
+            )

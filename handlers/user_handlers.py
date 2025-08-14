@@ -9,7 +9,8 @@ from utils import (send_random_recipe, start_search_dialog,
                    process_search_query_and_display_results,
                    send_selected_recipe_by_choice,
                    start_by_ingredients_search,
-                   process_search_by_ingredients)
+                   process_search_by_ingredients, from_favorites)
+from keyboards.inline import main_menu_keyboard
 
 
 user_handlers_router = Router()
@@ -83,3 +84,39 @@ async def process_recipe_ingredients(message: types.Message, state: FSMContext):
 async def process_choice(message: types.Message, state: FSMContext):
     '''Второй шаг поиска. Обработка выбора юзера'''
     await send_selected_recipe_by_choice(message, state)
+
+
+@user_handlers_router.callback_query(
+    lambda c: c.data == 'main_menu_inline'
+)
+async def main_menu_inline(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    keyboard = await main_menu_keyboard(state)
+    await callback.message.answer(
+        'Вы вернулись в главное меню. Выберите действие:',
+        reply_markup=keyboard
+        )
+
+
+@user_handlers_router.callback_query(
+    lambda c: c.data == 'favorites_inline'
+)
+async def favorites_inline(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await from_favorites(callback, state)
+    
+
+# РЕАЛИЗОВАТЬ:
+@user_handlers_router.callback_query(
+    lambda c: c.data == 'add_favorite:RECIPE_ID'
+)
+
+
+@user_handlers_router.callback_query(
+    lambda c: c.data == 'remove_favorite:RECIPE_ID'
+)
+
+
+@user_handlers_router.callback_query(
+    lambda c: c.data == 'back_to_recipe:RECIPE_ID'
+)
