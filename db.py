@@ -70,7 +70,7 @@ class ShoppingList(Base):
     item_name = Column(String(200), nullable=False)
 
     def __repr__(self):
-        return f'<ShoppingList(user_od={self.user_id}), item_name="{self.item_name}">'
+        return f'<ShoppingList(user_id={self.user_id}), item_name="{self.item_name}">'
 
 
 async def create_tables():

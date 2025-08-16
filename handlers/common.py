@@ -1,6 +1,9 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
+from sqlalchemy.future import select
 from keyboards.inline import main_menu_keyboard
+from db import SessionLocal, User
 
 
 common_router = Router()
@@ -19,8 +22,22 @@ async def cmd_help(message: types.Message):
 
 
 @common_router.message(CommandStart)
-async def cmd_start(message: types.Message):
-    keyboard = main_menu_keyboard()
+async def cmd_start(message: types.Message, state: FSMContext):
+    keyboard = await main_menu_keyboard(state)
+    async with SessionLocal() as db:
+        user_id = message.from_user.id
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalars().first()
+
+        if not user:
+            new_user = User(
+                id=user_id,
+                username=message.from_user.username
+            )
+            db.add(new_user)
+            await db.commit()
+            await db.refresh(new_user)
+
     await message.answer(
         f'Привет, {message.from_user.first_name}!👋\n'
         'Я - Рецепторий, твой персональный кулинарный помощник! 🧑‍🍳\n'
