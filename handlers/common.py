@@ -31,7 +31,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
         if not user:
             new_user = User(
-                user_id=user_id,
+                id=user_id,
                 username=message.from_user.username
             )
             db.add(new_user)

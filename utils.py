@@ -10,10 +10,10 @@ from keyboards.inline import main_menu_keyboard, recipe_actions_keyboard
 
 async def send_one_recipe(
         event: types.Message | types.CallbackQuery,
-        recipe: Recipe, state: FSMContext
+        recipe: Recipe, is_favorite: bool, state: FSMContext
         ):
     '''Отправляет один рецепт пользователю, включая фото и полный текст'''
-    keyboard = recipe_actions_keyboard()
+    keyboard = recipe_actions_keyboard(is_favorite, recipe.id)
 
     caption_text = (
             f'<b>Рецепт:</b> {recipe.name_ru}'
@@ -38,8 +38,10 @@ async def send_one_recipe(
                        reply_markup=keyboard)
 
 
-async def send_random_recipe(event: types.Message | types.CallbackQuery):
+async def send_random_recipe(event: types.Message | types.CallbackQuery,
+                             state: FSMContext):
     '''Получает случайный рецепт из БД и вызывает send_one_recipe'''
+    is_favorite = False
     async with SessionLocal() as db:
         result = await db.execute(select(Recipe).order_by(func.random()).limit(1))
         rand_recipe = result.scalars().first()
@@ -48,7 +50,7 @@ async def send_random_recipe(event: types.Message | types.CallbackQuery):
             await event.answer('''К сожалению, я пока не знаю рецептов,
                                 но уже активно изучаю кулинарную книгу''')
             return
-        await send_one_recipe(event, rand_recipe)
+        await send_one_recipe(event, rand_recipe, is_favorite, state)
 
 
 async def start_search_dialog(
@@ -178,6 +180,7 @@ async def process_search_by_ingredients(
 
 async def from_favorites(callback: types.CallbackQuery, state: FSMContext):
     '''Получает и выводит юзеру список избранных рецептов'''
+    await callback.answer()
     keyboard = await main_menu_keyboard(state)
     async with SessionLocal() as db:
         user_id = callback.from_user.id
@@ -204,3 +207,4 @@ async def from_favorites(callback: types.CallbackQuery, state: FSMContext):
                 'У вас пока нет избранных рецептов 🤷‍♂️',
                 reply_markup=keyboard
             )
+
