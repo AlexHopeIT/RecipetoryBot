@@ -13,7 +13,10 @@ from utils import (send_random_recipe, start_search_dialog,
                    start_by_ingredients_search,
                    process_search_by_ingredients, from_favorites,
                    send_one_recipe)
-from keyboards.inline import main_menu_keyboard, recipe_actions_keyboard
+from keyboards.inline import (
+    main_menu_keyboard, recipe_actions_keyboard,
+    favorites_paginated_keyboard
+    )
 
 
 user_handlers_router = Router()
@@ -235,3 +238,82 @@ async def back_to_recipe(callback: types.CallbackQuery, state: FSMContext):
                 'Возвращаю в главное меню...',
                 reply_markup=keyboard
             )
+
+
+@user_handlers_router.callback_query(lambda c: c.data.startswith('view_recipe:'))
+async def view_recipe(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+
+    try:
+        recipe_id = int(callback.data.split(':')[1])
+    except (IndexError, ValueError):
+        return
+
+    async with SessionLocal() as db:
+        recipe_result = await db.execute(
+            select(Recipe).where(Recipe.id == recipe_id)
+        )
+        found_recipe = recipe_result.scalars().first()
+
+        user_result = await db.execute(
+            select(User)
+            .options(selectinload(User.favorites_recipes))
+            .where(User.id == callback.from_user.id)
+        )
+        user = user_result.scalars().first()
+        is_favorite = found_recipe in user.favorites_recipes if user and found_recipe else False
+
+        if found_recipe:
+            await send_one_recipe(
+                callback.message,
+                found_recipe,
+                is_favorite,
+                state
+            )
+
+            await state.clear()
+        else:
+            await callback.message.answer(
+                'К сожалению, рецепт не найден.'
+            )
+
+
+@user_handlers_router.callback_query(lambda c: c.data.startswith('favorites_page:'))
+async def favorites_page_handler(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    try:
+        page = int(callback.data.split(':')[1])
+    except (IndexError, ValueError):
+        keyboard = await main_menu_keyboard(state)
+        await callback.message.answer(
+            'Произошла ошибка, возвращаюсь в главное меню.',
+            reply_markup=keyboard
+        )
+        return
+
+    async with SessionLocal() as db:
+        user_result = await db.execute(
+            select(User).options(selectinload(User.favorites_recipes))
+            .where(User.id == callback.from_user.id)
+        )
+        user = user_result.scalars().first()
+
+    if user and user.favorites_recipes:
+        keyboard = await favorites_paginated_keyboard(
+            user.favorites_recipes, 
+            page=page
+        )
+        
+        await callback.bot.edit_message_reply_markup(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            reply_markup=keyboard
+        )
+    else:
+        # Если список избранного внезапно стал пустым
+        keyboard = await main_menu_keyboard(state)
+        await callback.message.answer(
+            'У вас больше нет избранных рецептов 🤷‍♂️',
+            reply_markup=keyboard
+        )

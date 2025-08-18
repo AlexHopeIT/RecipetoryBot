@@ -5,7 +5,9 @@ from sqlalchemy import func, select, or_
 from sqlalchemy.orm import selectinload
 from db import SessionLocal, Recipe, User
 from handlers.states import FindRecipeState, ByIngredientsState
-from keyboards.inline import main_menu_keyboard, recipe_actions_keyboard
+from keyboards.inline import (
+    main_menu_keyboard, recipe_actions_keyboard, favorites_paginated_keyboard
+    )
 
 
 async def send_one_recipe(
@@ -181,7 +183,7 @@ async def process_search_by_ingredients(
 async def from_favorites(callback: types.CallbackQuery, state: FSMContext):
     '''Получает и выводит юзеру список избранных рецептов'''
     await callback.answer()
-    keyboard = await main_menu_keyboard(state)
+
     async with SessionLocal() as db:
         user_id = callback.from_user.id
         result = await db.execute(
@@ -192,19 +194,18 @@ async def from_favorites(callback: types.CallbackQuery, state: FSMContext):
         user = result.scalars().first()
 
         if user and user.favorites_recipes:
-            answ = ['⭐️ Ваши избранные рецепты:']
-            for i, recipe in enumerate(user.favorites_recipes, start=1):
-                answ.append(f'{i}. {recipe.name_ru}')
-
-            final_message = '\n'.join(answ)
-
-            await callback.message.answer(
-                final_message,
-                reply_markup=keyboard
+            keyboard = await favorites_paginated_keyboard(
+                user.favorites_recipes,
+                page=0
             )
+            await callback.message.answer(
+                '⭐️ Ваши избранные рецепты:\n'
+                'Выберите, чтобы просмотреть рецепт:',
+                reply_markup=keyboard
+                )
         else:
+            keyboard = await main_menu_keyboard(state)
             await callback.message.answer(
                 'У вас пока нет избранных рецептов 🤷‍♂️',
                 reply_markup=keyboard
             )
-
