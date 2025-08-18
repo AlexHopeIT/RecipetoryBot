@@ -1,5 +1,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
+from db import Recipe
 
 
 async def main_menu_keyboard(state: FSMContext):
@@ -64,3 +66,49 @@ def recipe_actions_keyboard(is_favorite: bool, recipe_id: int):
         [button],
         [main_menu_button]
     ])
+
+
+async def favorites_paginated_keyboard(
+        recipes: list[Recipe], page: int, per_page: int = 5
+        ):
+    builder = InlineKeyboardBuilder()
+
+    start_index = page * per_page
+    end_index = start_index + per_page
+    current_recipes = recipes[start_index:end_index]
+
+    for recipe in current_recipes:
+        builder.button(
+            text=recipe.name_ru,
+            callback_data=f'view_recipe:{recipe.id}'
+        )
+
+    builder.adjust(1)
+
+    nav_buttons = []
+
+    next_page_number = page + 1
+    previous_page_number = page - 1
+
+    if end_index < len(recipes): 
+        nav_buttons.append(InlineKeyboardButton(
+            text='Далее➡️',
+            callback_data=f'favorites_page:{next_page_number}'
+            )
+        )
+
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(
+            text='Назад⬅️',
+            callback_data=f'favorites_page:{previous_page_number}'
+            )
+        )
+
+    if nav_buttons:
+        builder.row(*nav_buttons)
+
+    builder.button(
+        text='⬅️ Главное меню', callback_data='main_menu_inline'
+        )
+
+    return builder.as_markup()
