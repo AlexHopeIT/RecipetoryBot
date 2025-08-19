@@ -162,39 +162,51 @@ async def remove_favorite(
     state: FSMContext,
     bot: Bot
                         ):
-    await callback.answer(
-                    'Рецепт удален из избранного!'
-                )
-    user_id = callback.from_user.id
+    print("Received callback data:", callback.data)  # Отладочная печать
     try:
-        recipe_id = int(callback.data.split(':')[1])
+        parts = callback.data.split(':')
+        recipe_id = int(parts[1])
     except (IndexError, ValueError):
         return
+
     async with SessionLocal() as db:
         user_result = await db.execute(
-            select(User).options(
-                selectinload(User.favorites_recipes)
-                ).where(User.id == user_id)
+            select(User)
+            .options(selectinload(User.favorites_recipes))
+            .where(User.id == callback.from_user.id)
         )
+        user = user_result.scalars().first()
+
         recipe_result = await db.execute(
             select(Recipe).where(Recipe.id == recipe_id)
         )
-
-        user = user_result.scalars().first()
         recipe = recipe_result.scalars().first()
 
-        if user and recipe:
-            if recipe in user.favorites_recipes:
-                user.favorites_recipes.remove(recipe)
-                await db.commit()
-                await bot.edit_message_reply_markup(
-                    chat_id=callback.message.chat.id,
-                    message_id=callback.message.message_id,
-                    reply_markup=recipe_actions_keyboard(
-                        is_favorite=False,
-                        recipe_id=recipe_id
-                        )
+        if user and recipe and recipe in user.favorites_recipes:
+            user.favorites_recipes.remove(recipe)
+            await db.commit()
+
+            await db.refresh(user)
+            updated_recipes = user.favorites_recipes
+
+            if updated_recipes:
+                keyboard = await favorites_paginated_keyboard(
+                    updated_recipes, page=0
                     )
+                await callback.message.edit_text(
+                    '⭐️ Ваши избранные рецепты:\n'
+                    'Выберите, чтобы посмотреть:',
+                    reply_markup=keyboard
+                )
+            else:
+                await callback.message.edit_text(
+                    'У вас больше нет избранных рецептов 🤷‍♂️',
+                    reply_markup=await main_menu_keyboard(state)
+                )
+        else:
+            await callback.message.answer(
+                'Этот рецепт уже не в вашем избранном.'
+            )
 
 
 @user_handlers_router.callback_query(
@@ -240,12 +252,16 @@ async def back_to_recipe(callback: types.CallbackQuery, state: FSMContext):
             )
 
 
-@user_handlers_router.callback_query(lambda c: c.data.startswith('view_recipe:'))
+@user_handlers_router.callback_query(
+        lambda c: c.data.startswith('view_recipe:')
+        )
 async def view_recipe(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
     try:
-        recipe_id = int(callback.data.split(':')[1])
+        parts = callback.data.split(':')
+        recipe_id = int(parts[1])
+        page_from_list = int(parts[2])
     except (IndexError, ValueError):
         return
 
@@ -268,7 +284,8 @@ async def view_recipe(callback: types.CallbackQuery, state: FSMContext):
                 callback.message,
                 found_recipe,
                 is_favorite,
-                state
+                state,
+                page=page_from_list
             )
 
             await state.clear()
@@ -278,10 +295,14 @@ async def view_recipe(callback: types.CallbackQuery, state: FSMContext):
             )
 
 
-@user_handlers_router.callback_query(lambda c: c.data.startswith('favorites_page:'))
-async def favorites_page_handler(callback: types.CallbackQuery, state: FSMContext):
+@user_handlers_router.callback_query(
+        lambda c: c.data.startswith('favorites_page:')
+        )
+async def favorites_page_handler(
+    callback: types.CallbackQuery, state: FSMContext
+                ):
     await callback.answer()
-    
+
     try:
         page = int(callback.data.split(':')[1])
     except (IndexError, ValueError):
@@ -301,10 +322,10 @@ async def favorites_page_handler(callback: types.CallbackQuery, state: FSMContex
 
     if user and user.favorites_recipes:
         keyboard = await favorites_paginated_keyboard(
-            user.favorites_recipes, 
+            user.favorites_recipes,
             page=page
         )
-        
+
         await callback.bot.edit_message_reply_markup(
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,

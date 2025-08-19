@@ -44,28 +44,35 @@ async def main_menu_keyboard(state: FSMContext):
     return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
 
-def recipe_actions_keyboard(is_favorite: bool, recipe_id: int):
+def recipe_actions_keyboard(
+        is_favorite: bool, recipe_id: int, page: int = None
+        ):
     '''Инлайн-клава для действий с рецептом'''
+    builder = InlineKeyboardBuilder()
     if is_favorite:
-        button = InlineKeyboardButton(
+        builder.button(
             text='❌ Удалить из избранного',
             callback_data=f'remove_favorite:{recipe_id}'
         )
     else:
-        button = InlineKeyboardButton(
+        builder.button(
             text='💾 Добавить в избранное',
             callback_data=f'add_favorite:{recipe_id}'
         )
 
-    main_menu_button = InlineKeyboardButton(
+    if page is not None:
+        builder.button(
+            text='⬅️ Назад к списку',
+            callback_data=f'favorites_page:{page}'
+        )
+
+    builder.button(
             text='Ⓜ️ Главное меню',
             callback_data='main_menu_inline'
         )
 
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [button],
-        [main_menu_button]
-    ])
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 async def favorites_paginated_keyboard(
@@ -80,7 +87,7 @@ async def favorites_paginated_keyboard(
     for recipe in current_recipes:
         builder.button(
             text=recipe.name_ru,
-            callback_data=f'view_recipe:{recipe.id}'
+            callback_data=f'view_recipe:{recipe.id}:{page}'
         )
 
     builder.adjust(1)

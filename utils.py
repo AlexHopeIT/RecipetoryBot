@@ -12,7 +12,8 @@ from keyboards.inline import (
 
 async def send_one_recipe(
         event: types.Message | types.CallbackQuery,
-        recipe: Recipe, is_favorite: bool, state: FSMContext
+        recipe: Recipe, is_favorite: bool, state: FSMContext,
+        page: int = None
         ):
     '''Отправляет один рецепт пользователю, включая фото и полный текст'''
     keyboard = recipe_actions_keyboard(is_favorite, recipe.id)
