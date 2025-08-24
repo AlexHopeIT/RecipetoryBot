@@ -27,6 +27,12 @@ favorites_table = Table(
     Column('recipe_id', Integer, ForeignKey('recipes.id'))
 )
 
+shopping_recipes_table = Table(
+    'shoping_recipes', Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id')),
+    Column('recipe_id', Integer, ForeignKey('recipes.id'))
+)
+
 
 class User(Base):
     __tablename__ = 'users'
@@ -38,6 +44,18 @@ class User(Base):
         'Recipe',
         secondary=favorites_table,
         backref='faivorited_by'
+    )
+
+    shopping_list_items = relationship(
+        'ShoppingList',
+        backref='user',
+        lazy='joined'
+    )
+
+    shoping_recipes = relationship(
+        'Recipe',
+        secondary=shopping_recipes_table,
+        backref='in_shoping_list_for'
     )
 
     def __repr__(self):
@@ -95,5 +113,5 @@ def get_db():
 
 if __name__ == '__main__':
     import asyncio
-    asyncio.run(create_tables)
+    asyncio.run(create_tables())
     print('Таблица создана в файле recipes.db')

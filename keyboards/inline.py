@@ -6,42 +6,42 @@ from db import Recipe
 
 async def main_menu_keyboard(state: FSMContext):
     '''Создание инлайн-клавы главного меню'''
-    find_button = InlineKeyboardButton(
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
         text='🔍 Найти рецепт',
         callback_data='find_recipe_inline'
         )
-    random_button = InlineKeyboardButton(
+    builder.button(
         text='📜 Случайный рецепт',
         callback_data='random_recipe_inline'
         )
-    by_ingredients = InlineKeyboardButton(
+    builder.button(
         text='🥦 Поиск рецепта по ингредиентам',
         callback_data='by_ingredients_inline'
-    )
-
-    favorites = InlineKeyboardButton(
+        )
+    builder.button(
         text='⭐️ Избранное',
         callback_data='favorites_inline'
-    )
+        )
+    builder.button(
+        text='🛒 Список покупок',
+        callback_data='view_shopping_list'
+        )
 
-    keyboard_rows = [
-        [find_button, random_button],
-        [by_ingredients],
-        [favorites]
-    ]
+    builder.adjust(2, 1, 2)
 
     user_data = await state.get_data()
     last_recipe_id = user_data.get('last_recipe_id')
 
     if last_recipe_id:
-        back_to_recipe_button = InlineKeyboardButton(
+        builder.button(
             text='🔙 Назад',
             callback_data=f'back_to_recipe:{last_recipe_id}'
-        )
+            )
+        builder.adjust(1, 2, 1, 2)
 
-        keyboard_rows.insert(0, [back_to_recipe_button])
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+    return builder.as_markup()
 
 
 def recipe_actions_keyboard(
@@ -53,6 +53,10 @@ def recipe_actions_keyboard(
         builder.button(
             text='❌ Удалить из избранного',
             callback_data=f'remove_favorite:{recipe_id}'
+        )
+        builder.button(
+            text='🛒 Добавить ингредиенты в список покупок',
+            callback_data=f'add_to_shopping_list:{recipe_id}'
         )
     else:
         builder.button(
@@ -119,3 +123,17 @@ async def favorites_paginated_keyboard(
         )
 
     return builder.as_markup()
+
+
+async def shopping_list_actions_keyboard():
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text='🗑️ Очистить весь список',
+        callback_data='clear_shopping_list'
+    )
+
+    builder.button(
+        text='⬅️ Главное меню',
+        callback_data='main_menu_inline'
+    )
