@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from db import Recipe
@@ -125,8 +125,20 @@ async def favorites_paginated_keyboard(
     return builder.as_markup()
 
 
-async def shopping_list_actions_keyboard():
+async def shopping_list_actions_keyboard(items: list):
     builder = InlineKeyboardBuilder()
+
+    for item in items:
+        status_symbol = '☑️' if not item.is_purchased else '✅'
+        builder.button(
+            text=f'{status_symbol} {item.item_name}',
+            callback_data=f'toggle_purchased:{item.id}'
+        )
+
+        builder.button(
+            text='❌',
+            callback_data=f'delete_item:{item.id}'
+        )
 
     builder.button(
         text='🗑️ Очистить весь список',
@@ -137,3 +149,7 @@ async def shopping_list_actions_keyboard():
         text='⬅️ Главное меню',
         callback_data='main_menu_inline'
     )
+
+    builder.adjust(2, repeat=True)
+    builder.adjust(1)
+    return builder.as_markup()

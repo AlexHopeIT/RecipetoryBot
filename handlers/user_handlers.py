@@ -1,10 +1,10 @@
 from aiogram import Router, types
 from aiogram.client.bot import Bot
-from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
-from sqlalchemy import func, select, or_
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 from db import SessionLocal, Recipe, User, ShoppingList
 from .states import FindRecipeState, ByIngredientsState
 from utils import (send_random_recipe, start_search_dialog,
@@ -121,18 +121,22 @@ async def add_favorite(
     callback: types.CallbackQuery,
     state: FSMContext,
     bot: Bot
-                       ):
-    await callback.answer('Рецепт добавлен в избранное!')
+):
+    await callback.answer()
+
     user_id = callback.from_user.id
+
     try:
         recipe_id = int(callback.data.split(':')[1])
     except (IndexError, ValueError):
+        await callback.message.edit_text('Произошла ошибка с данными.')
         return
+
     async with SessionLocal() as db:
         user_result = await db.execute(
             select(User).options(
                 selectinload(User.favorites_recipes)
-                ).where(User.id == user_id)
+            ).where(User.id == user_id)
         )
         recipe_result = await db.execute(
             select(Recipe).where(Recipe.id == recipe_id)
@@ -142,7 +146,20 @@ async def add_favorite(
         recipe = recipe_result.scalars().first()
 
         if user and recipe:
-            if recipe not in user.favorites_recipes:
+            if recipe in user.favorites_recipes:
+                # Рецепт уже в избранном, просто обновляем кнопку
+                await bot.edit_message_reply_markup(
+                    chat_id=callback.message.chat.id,
+                    message_id=callback.message.message_id,
+                    reply_markup=recipe_actions_keyboard(
+                        is_favorite=True,
+                        recipe_id=recipe_id
+                    )
+                )
+                await callback.answer('Этот рецепт уже в избранном.')
+                return
+
+            try:
                 user.favorites_recipes.append(recipe)
                 await db.commit()
                 await bot.edit_message_reply_markup(
@@ -151,8 +168,15 @@ async def add_favorite(
                     reply_markup=recipe_actions_keyboard(
                         is_favorite=True,
                         recipe_id=recipe_id
-                        )
                     )
+                )
+                await callback.answer('Рецепт успешно добавлен в избранное.')
+            except IntegrityError:
+                await db.rollback() # Откатываем транзакцию при ошибке
+                await callback.answer('Этот рецепт уже в избранном.')
+            except Exception as e:
+                await db.rollback() # Откатываем любую другую ошибку
+                await callback.answer(f'Произошла неизвестная ошибка: {e}')
 
 
 @user_handlers_router.callback_query(
@@ -342,7 +366,7 @@ async def favorites_page_handler(
 
 
 @user_handlers_router.callback_query(
-        lambda c: c.data.startswith('add_to_shopping_list:')
+        lambda c: c.data.startswith('add_to_shopping_list')
         )
 async def add_to_shopping_list_handler(
     callback: types.CallbackQuery, state: FSMContext
@@ -371,14 +395,14 @@ async def add_to_shopping_list_handler(
             ]
 
             for item in ingredients_list:
-                new_item = ShoppingList(user_id=user_id, item_id=item)
+                new_item = ShoppingList(user_id=user_id, item_name=item)
                 db.add(new_item)
-                db.commit()
+            await db.commit()
 
-                await callback.message.answer(
-                    'Список покупок обновлен!',
-                    reply_markup=main_menu_keyboard(state)
-                )
+            await callback.message.answer(
+                'Список покупок обновлен!',
+                reply_markup=await main_menu_keyboard(state)
+            )
         else:
             callback.message.answer(
                 'Сожалею, но рецепт не найден...'
@@ -386,7 +410,7 @@ async def add_to_shopping_list_handler(
 
 
 @user_handlers_router.callback_query(
-        lambda c: c.data.startswith('view_shopping_list:')
+        lambda c: c.data.startswith('view_shopping_list')
         )
 async def view_shopping_list_handler(
     callback: types.CallbackQuery, state: FSMContext
@@ -397,11 +421,11 @@ async def view_shopping_list_handler(
 
     async with SessionLocal() as db:
         shopping_list_result = await db.execute(
-            select(ShoppingList.item_name).where(
+            select(ShoppingList).where(
                 ShoppingList.user_id == user_id
             )
         )
-        shopping_items = shopping_list_result.scalars().first()
+        shopping_items = shopping_list_result.scalars().all()
 
         if not shopping_items:
             await callback.message.edit_text(
@@ -411,12 +435,78 @@ async def view_shopping_list_handler(
             )
             return
 
-        items_text = '\n'.join([f'•{item}' for item in shopping_items])
+        items_text = '\n'.join([
+            f'~~{item.item_name}~~' if item.is_purchased else f'• {item.item_name}' 
+            for item in shopping_items
+        ])
+        try:
+            await callback.message.edit_text(
+                f'<b>🛒 Ваш список покупок</b>:\n'
+                'Купленные ингредиенты отмечайте кнопкой ☑️ '
+                '(для отмены нажмите на ингредиент еще раз)\n'
+                'Чтобы удалить ингредиент из списка (безвозвратно!), нажмите ❌\n\n'
+                f'{items_text}\n\n'
+                'Чтобы удалить весь список, нажмите кнопку ниже.',
+                reply_markup=await shopping_list_actions_keyboard(
+                    shopping_items
+                    ),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            await callback.message.answer(
+                f'Произошла ошибка при обновлении списка: {e}'
+            )
+
+
+@user_handlers_router.callback_query(
+    lambda c: c.data.startswith('clear_shopping_list')
+    )
+async def clear_shopping_list_handler(
+    callback: types.CallbackQuery, state: FSMContext
+                ):
+    await callback.answer('Список покупок очищен полностью!')
+
+    user_id = callback.from_user.id
+
+    async with SessionLocal() as db:
+        await db.execute(
+            delete(ShoppingList).where(ShoppingList.user_id == user_id)
+        )
+        await db.commit()
 
         await callback.message.edit_text(
-            f'**🛒 Ваш список покупок**:\n\n'
-            f'{items_text}\n\n'
-            'Чтобы удалить весь список, нажмите кнопку ниже.',
-            reply_markup=shopping_list_actions_keyboard(),
-            parse_mode='Markdown'
+            'Ваш список покупок полностью очищен! ✅',
+            reply_markup=await main_menu_keyboard(state)
         )
+
+
+@user_handlers_router.callback_query(
+    lambda c: c.data.startswith('toggle_purchased:')
+    )
+async def toggle_purchased_item(
+    callback: types.CallbackQuery, state: FSMContext
+        ):
+    item_id = int(callback.data.split(':')[1])
+
+    async with SessionLocal() as db:
+        item = await db.get(ShoppingList, item_id)
+        if item:
+            item.is_purchased = not item.is_purchased
+            await db.commit()
+
+    await view_shopping_list_handler(callback, state)
+
+
+@user_handlers_router.callback_query(
+    lambda c: c.data.startswith('delete_item:')
+)
+async def delete_shopping_list_item(callback: types.CallbackQuery, state: FSMContext):
+    item_id = int(callback.data.split(':')[1])
+
+    async with SessionLocal() as db:
+        await db.execute(
+            delete(ShoppingList).where(ShoppingList.id == item_id)
+        )
+        await db.commit()
+
+    await view_shopping_list_handler(callback, state)

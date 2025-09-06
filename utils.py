@@ -1,9 +1,10 @@
+import re
 from aiogram import types
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import func, select, or_
+from sqlalchemy import func, select, or_, and_
 from sqlalchemy.orm import selectinload
-from db import SessionLocal, Recipe, User
+from db import SessionLocal, Recipe, User, favorites_table as favorites
 from handlers.states import FindRecipeState, ByIngredientsState
 from keyboards.inline import (
     main_menu_keyboard, recipe_actions_keyboard, favorites_paginated_keyboard
@@ -123,8 +124,23 @@ async def send_selected_recipe_by_choice(
         choice = int(message.text)
         if 1 <= choice <= len(found_recipes):
             selected_recipe = found_recipes[choice - 1]
+            user_id = message.from_user.id
+            recipe_id = selected_recipe.id
+            
+            async with SessionLocal() as db:
+                # Проверяем, является ли рецепт избранным
+                is_favorite_check = await db.execute(
+                    select(favorites).where(
+                        and_(
+                            favorites.c.user_id == user_id,
+                            favorites.c.recipe_id == recipe_id
+                        )
+                    )
+                )
+                is_favorite = is_favorite_check.first() is not None
 
-            await send_one_recipe(message, selected_recipe)
+            # Исправленный вызов функции
+            await send_one_recipe(message, selected_recipe, is_favorite, state)
             await state.clear()
         else:
             await message.answer('Введите корректный номер рецепта из списка.')
