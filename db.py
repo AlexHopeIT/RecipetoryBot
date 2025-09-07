@@ -4,7 +4,8 @@
 
 import os
 from sqlalchemy import (Column, Integer,
-                        String, Text, ForeignKey, Table)
+                        String, Text, ForeignKey, Table,
+                        Boolean)
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -86,6 +87,7 @@ class ShoppingList(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('users.id'))
     item_name = Column(String(200), nullable=False)
+    is_purchased = Column(Boolean, default=False)
 
     def __repr__(self):
         return f'<ShoppingList(user_id={self.user_id}), item_name="{self.item_name}">'

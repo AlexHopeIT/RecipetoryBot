@@ -1,8 +1,4 @@
-'''
-Интеграция с API, наполнение БД
-'''
-
-
+import asyncio
 import requests
 import time
 from googletrans import Translator
@@ -40,81 +36,82 @@ def translate_text(text):
     if not text:
         return ''
     try:
+        # У Google Translate есть ограничение по символам, 
+        # поэтому большие тексты могут не переводиться
         return translator.translate(text, src='en', dest='ru').text
     except Exception as e:
         print(f'Ошибка перевода: {e}')
         return ''
 
 
-def fill_database():
-    '''Наполнение БД'''
-    db = SessionLocal()
+async def fill_database():
+    '''Наполнение БД (асинхронная версия)'''
     recipes_added = 0
 
     print('Start parsing')
 
-    for letter in LETTERS:
-        print(f'Загрузка рецептов на букву {letter}')
-        recipes = get_recipes_by_letter(letter)
+    async with SessionLocal() as db:
+        for letter in LETTERS:
+            print(f'Загрузка рецептов на букву {letter}')
+            recipes = get_recipes_by_letter(letter)
 
-        if not recipes:
-            continue
-
-        for recipe_data in recipes:
-            if not isinstance(recipe_data, dict):
-                print(f'Пропускаем некорректные данные для буквы {letter}: {recipe_data}')
+            if not recipes:
                 continue
-            try:
-                ingredients_list = []
-                for i in range(1, 21):
-                    ingredient = recipe_data.get(f'strIngredient{i}')
-                    measure = recipe_data.get(f'strMeasure{i}')
-                    if ingredient and ingredient.strip():
-                        ingredients_list.append(f'{ingredient.strip()} ({measure.strip()})')
 
-                name_en = recipe_data.get('strMeal')
-                ingredients_en = '\n'.join(ingredients_list)
-                instructions_en = recipe_data.get('strInstructions')
-                cuisine_en = recipe_data.get('strArea')
-
-                if not name_en:
-                    print('Пропуск рецепта без названия')
+            for recipe_data in recipes:
+                if not isinstance(recipe_data, dict):
+                    print(f'Пропускаем некорректные данные для буквы {letter}: {recipe_data}')
                     continue
+                try:
+                    ingredients_list = []
+                    for i in range(1, 21):
+                        ingredient = recipe_data.get(f'strIngredient{i}')
+                        measure = recipe_data.get(f'strMeasure{i}')
+                        if ingredient and ingredient.strip():
+                            ingredients_list.append(f'{ingredient.strip()} ({measure.strip()})')
 
-                print(f'Переводим рецепт {name_en}')
+                    name_en = recipe_data.get('strMeal')
+                    ingredients_en = '\n'.join(ingredients_list)
+                    instructions_en = recipe_data.get('strInstructions')
+                    cuisine_en = recipe_data.get('strArea')
 
-                name_ru = translate_text(name_en)
-                ingredients_ru = translate_text(ingredients_en)
-                instructions_ru = translate_text(instructions_en)
-                cuisine_ru = translate_text(cuisine_en)
+                    if not name_en:
+                        print('Пропуск рецепта без названия')
+                        continue
 
-                db_recipe = Recipe(
-                    name=name_en,
-                    ingredients=ingredients_en,
-                    instructions=instructions_en,
-                    image_url=recipe_data.get('strMealThumb'),
-                    cuisine=cuisine_en,
-                    name_ru=name_ru,
-                    ingredients_ru=ingredients_ru,
-                    instructions_ru=instructions_ru
-                )
+                    print(f'Переводим рецепт {name_en}')
 
-                db.add(db_recipe)
-                db.commit()
-                recipes_added += 1
-            except IntegrityError:
-                db.rollback()
-                print(
-                    f'Рецепт {recipe_data.get("strMeal")} уже есть в БД. Пропускаем'
+                    name_ru = translate_text(name_en)
+                    ingredients_ru = translate_text(ingredients_en)
+                    instructions_ru = translate_text(instructions_en)
+
+                    db_recipe = Recipe(
+                        name=name_en,
+                        ingredients=ingredients_en,
+                        instructions=instructions_en,
+                        image_url=recipe_data.get('strMealThumb'),
+                        cuisine=cuisine_en,
+                        name_ru=name_ru,
+                        ingredients_ru=ingredients_ru,
+                        instructions_ru=instructions_ru,
                     )
-            except Exception as e:
-                db.rollback()
-                print(f'Ошибка при добавлении рецепта: {e}')
 
-        time.sleep(1)
+                    db.add(db_recipe)
+                    recipes_added += 1
+
+                except IntegrityError:
+                    await db.rollback()
+                    print(f'Рецепт {recipe_data.get("strMeal")} уже есть в БД. Пропускаем')
+                except Exception as e:
+                    await db.rollback()
+                    print(f'Ошибка при добавлении рецепта: {e}')
+
+            # Сохраняем все рецепты, собранные по одной букве
+            await db.commit()
+            time.sleep(1)
+
     print(f'БД заполнена, добавлено {recipes_added} новых рецептов')
-    db.close()
 
 
 if __name__ == '__main__':
-    fill_database()
+    asyncio.run(fill_database())
